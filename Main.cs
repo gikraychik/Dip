@@ -199,14 +199,38 @@ namespace Diploma
 			}
 			return res;
 		}
+		public static List<Data> FactorSeconds(List<Data> x)
+		{
+			List<Data> d = new List<Data>();
+			int i = 0;
+			while (i < x.Count)
+			{
+				DateTime dt = x[i].dt;
+				int volume = 0;
+				double v = 0.0;
+				while (x[i].dt == dt)
+				{
+					v += x[i].v * x[i].volume;
+					volume += x[i].volume;
+					i += 1;
+					if (i == x.Count) break;
+				}
+				v /= volume;
+				d.Add(new Data(dt, v, volume));
+			}
+			return d;
+		}
 		public static void Main (string[] args)
 		{
 			List<Data> all_data = ReadData ("SBER.txt");
+			List<Data> d = FactorSeconds(all_data);
 			for (int i = 0; i < 8; ++i)
 			{
-				Console.WriteLine (all_data[i].dt + " " + all_data[i].v + " " + all_data[i].volume);
+				//Console.WriteLine (all_data[i].dt + " " + all_data[i].v + " " + all_data[i].volume);
+				Console.WriteLine(d[i].dt + " " + d[i].v + " " + d[i].volume);
 			}
-			Robot r = new Robot(1000, null, 8-1);
+			
+			/*Robot r = new Robot(1000, null, 8-1);
 			//Console.WriteLine(r.last_price);
 			//r.Move(all_data[0]);
 			for (int i = 0; i < 8; ++i)
@@ -216,7 +240,7 @@ namespace Diploma
 			Console.WriteLine("History:");
 			r.PrintHistory();
 			Console.WriteLine("State:");
-			r.PrintState();
+			r.PrintState();*/
 		}
 	}
 }
