@@ -7,6 +7,38 @@ using System.Linq;
 
 namespace Diploma
 {
+	class Operation
+	{
+		public Operation(int amount, DateTime dt)
+		{
+			this.amount = amount;
+			this.dt = dt;
+		}
+		public string ToString()
+		{
+			return amount.ToString() + " " + dt.ToString();
+		}
+		public int amount;
+		public DateTime dt;		// время, в которое нужно осуществить операцию
+	}
+	class State
+	{
+		public State(int pos, double money, double last_price, double last_volume)
+		{
+			this.pos = pos;
+			this.money = money;
+			this.last_price = last_price;
+			this.last_volume = last_volume;
+		}
+		public string ToString()
+		{
+			return pos + " " + money + " " + last_price + " " + last_volume;
+		}
+		public int pos;
+		public double money;
+		public double last_price;
+		public double last_volume;
+	}
 	class Data
 	{
 		public Data()
@@ -49,7 +81,7 @@ namespace Diploma
 		public Robot()
 		{
 			this.pos = 0; this.money = 0.0; this.dcn = (x => 0);
-			his = new List<ArrayList>();
+			his = new List<State>();
 			his.Add (this.state);
 		}
 		public Robot(double money, List<Data> d0)
@@ -58,14 +90,15 @@ namespace Diploma
 			this.money = money;
 			this.dcn = (x => 0);
 			this.d = d0;
-			his = new List<ArrayList>();
+			his = new List<State>();
 			his.Add(this.state);
 		}
-		public Robot(double money, List<Data> d0, int last_data, List<double> st_params, double comm, int asset_type)
+		public Robot(double money, List<Data> d0, int last_data, List<double> st_params, double comm, int asset_type, int time_offset_ms)
 		{
-			his = new List<ArrayList>();
+			his = new List<State>();
 			d = new List<Data>();
 			this.strat_params = new List<double>();
+			ops = new Queue<Operation>();
 			this.pos = 0;
 			this.money = money;
 			this.dcn = (x => 0);
@@ -77,27 +110,62 @@ namespace Diploma
 			this.pars = st_params;
 			this.commission_rate = comm;
 			this.asset_type = asset_type;
+			this.time_offset_ms = time_offset_ms;
 			his.Add(this.state);
 		}
 		public int Trade(int amount, double price, bool is_last_operation)
 		{
+			//if (is_last_operation) { Console.WriteLine("Len : " + ops.Count); }
+			if (amount == 0 && ops.Count == 0 && !is_last_operation) { return 0; }
 			int a = 0;
-			if (is_last_operation)
+			if ((ops.Count == 0 && !is_last_operation) || (pos != 0 && is_last_operation && ops.Count == 0))
 			{
-				if (pos != 0)		// открыта позиция, нужно ее закрыть
-				{
-					a = -pos;
-				}
-				else { a = 0; }
+				ops.Enqueue(new Operation(amount, cur_dt + new TimeSpan(0, 0, 0, 0, delay)));
+				Console.WriteLine ("PEEK : " + ops.Peek().ToString() + " amount : " + amount + " last_price : " + last_price);
+				return 0;
 			}
-			else { a = (int)(money < amount * price ? CalcContracts(money, price) : amount); }
-			if (a == 0) return 0;
-			pos += a;
-			money -= a * price;
-			money -= Math.Abs(CalcCommission(a, price));
-			his.Add(this.state);
-			if (a > 0) last_price = price;
-			return a;
+			else
+			{
+				Operation o = ops.Peek();
+				if (o.dt <= cur_dt)			// можно исполнять торговую операцию
+				{
+					amount = o.amount;
+					if (is_last_operation)
+					{
+						if (pos != 0) { a = -pos; }
+						else { a = 0; }
+					}
+					else { a = (int)(money < amount * price ? CalcContracts(money, price) : amount); }
+					if (a == 0)			// не успели совершить сделку, ошибка биржи
+					{
+						ops.Dequeue();
+						return 0;
+					}
+					pos += a;
+					money -= a * price;
+					money -= Math.Abs(CalcCommission(a, price));
+					last_price = price;
+					//Console.WriteLine("last_price : " + price);
+					ops.Dequeue();
+					return a;
+				}
+				return 0;
+			}
+		}
+		public void Move(Data d)
+		{
+			bool is_last = (count >= last_data ? true : false);
+			if (is_last) { Console.WriteLine("LAST_OPERATION : " + d.ToString()); }
+			count++;
+			this.d.Add(d);
+			int decision = dcn(this.d);
+			//if (decision != 0) { Console.WriteLine("Data : " + d.ToString()); }
+			//Console.WriteLine("decision : " + decision + " last_price : " + last_price);
+			int amount = Trade (decision, d.v, is_last);
+			if (amount != 0)
+			{
+				his.Add(this.state);
+			}
 		}
 		private int CalcContracts(double m, double p)
 		{
@@ -112,23 +180,14 @@ namespace Diploma
 		}
 		public void PrintState()
 		{
-			ArrayList x = this.state;
-			Console.WriteLine(x[0] + " " + x[1] + " func");
-		}
-		public void Move(Data d)
-		{
-			bool is_last = count == last_data ? true : false;
-			//Console.WriteLine("Len: " + count.ToString() + " " + last_data.ToString());
-			count++;
-			this.d.Add(d);
-			ArrayList st = this.state;
-			int decision = dcn(this.d);
-			//Console.WriteLine ("decision: " + decision);
-			//if (is_last && pos == 0) { return; }
-			Trade (decision, d.v, is_last);
+			Console.WriteLine(this.state.ToString());
 		}
 		// mode == 0 - asset
 		// mode == 1 - forts
+		public DateTime cur_dt
+		{
+			get { return d[d.Count-1].dt; }
+		}
 		private double CalcCommission(int amount, double price)
 		{
 			if (type == 0)		// asset
@@ -142,14 +201,14 @@ namespace Diploma
 		}
 		public void PrintHistory()
 		{
-			foreach (ArrayList x in his)
+			foreach (State x in his)
 			{
-				Console.WriteLine (x[0] + " " + x[1] + " func");
+				Console.WriteLine(x.ToString());
 			}
 		}
 		public double last_price
 		{
-			get { return pos == 0 ? 0 : l_price; }
+			get { return l_price; }
 			set { l_price = value; }
 		}
 		private List<double> strat_params;
@@ -162,18 +221,29 @@ namespace Diploma
 		{
 			get { return commission_rate; }
 		}
+		private Queue<Operation> ops;		// торговые операции, ожидающие исполнения
+		private int time_offset_ms;
 		private double l_price;
 		private int position;
 		private double mon;
 		private Func<List<Data>, int> f;
 		private List<Data> d;
-		private List<ArrayList> his;
+		private List<State> his;
 		private int count;
 		private int last_data;
 		private double commission_rate;
 		// 0 - asset
 		// 1 - futures
 		private int asset_type;
+		public int delay
+		{
+			get { return time_offset_ms; }
+			set { time_offset_ms = value; }
+		}
+		public int last_volume
+		{
+			get { return 0; }
+		}
 		public int type
 		{
 			get { return asset_type; }
@@ -192,19 +262,20 @@ namespace Diploma
 		{
 			get { return f; }
 			set { f = value; }
-		}
-		public ArrayList state
+		}		
+		public State state
 		{
-			get {
-				ArrayList x = new ArrayList();
+			get
+			{
+				return new State(pos, money, last_price, last_volume);
+				/* ArrayList x = new ArrayList();
 				x.Add(pos); x.Add(money); x.Add(dcn);
-				//Console.WriteLine(x[1]);
-				return x;
+				return x; */
 			}
 		}
 		public double AY
 		{
-			get { return ((double)state[1] - (double)his[0][1]) / (double)his[0][1]; }
+			get { return (state.money - his[0].money) / his[0].money; }
 		}
 		private int TestStrat(List<Data> d)
 		{
@@ -301,27 +372,31 @@ namespace Diploma
 		}
 		public static void Main (string[] args)
 		{
-			List<Data> all_data = ReadData ("SBER.txt");
+			int cnst = 10;
+			List<Data> all_data = ReadData ("Data/SBER_150301_150321.txt");
 			List<Data> d = FactorSeconds(all_data);
+			//DateTime dt = new DateTime(2000, 1, 1, 9, 59, 59, 0) + new TimeSpan(0, 0, 0, 0, 1000);
+			//Console.WriteLine(dt.ToString());
+			//return;
 			/*for (int i = 0; i < d.Count; ++i)
 			{
 				//Console.WriteLine (all_data[i].dt + " " + all_data[i].v + " " + all_data[i].volume);
 				Console.WriteLine(d[i].dt + " " + d[i].v + " " + d[i].volume);
 			}*/
-			int count = d.Count;
-			for (int i = 0; i < count; ++i)
+			int count = 20;
+			for (int i = 0; i < count+1; ++i)
 			{
 				Console.WriteLine(d[i].ToString());
 			}
 			double comm = 0.0001;
 			//double comm = 0.0;
-			double step = 0;
-			double h = 0.0001;
+			double step = 0.0002;
+			double h = 1;
 			List<string> lines = new List<string>();
 			while (step < 0.01)
 			{
-				Robot r = new Robot(1000, null, count - 1, new List<double>(new double[] { step }), comm, 0);
-				for (int i = 0; i < count; ++i)
+				Robot r = new Robot(1000, null, count - 1, new List<double>(new double[] { step }), comm, 0, 1000);
+				for (int i = 0; i < count+1; ++i)
 				{
 					r.Move (d[i]);
 				}
@@ -330,6 +405,7 @@ namespace Diploma
 				//Console.WriteLine("AY = " + r.AY);
 				lines.Add(step.ToString() + " " + r.AY);
 				step += h;
+				r.PrintHistory();
 			}
 			StreamWriter wr = new StreamWriter("Strat1/SBER.txt");
 			foreach(string s in lines)
