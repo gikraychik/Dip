@@ -121,10 +121,10 @@ namespace Diploma
 			if ((ops.Count == 0 && !is_last_operation) || (pos != 0 && is_last_operation && ops.Count == 0))
 			{
 				ops.Enqueue(new Operation(amount, cur_dt + new TimeSpan(0, 0, 0, 0, delay)));
-				Console.WriteLine ("PEEK : " + ops.Peek().ToString() + " amount : " + amount + " last_price : " + last_price);
-				return 0;
+				//Console.WriteLine ("PEEK : " + ops.Peek().ToString() + " amount : " + amount + " last_price : " + last_price);
+				//return 0;
 			}
-			else
+			if (ops.Count > 0)
 			{
 				Operation o = ops.Peek();
 				if (o.dt <= cur_dt)			// можно исполнять торговую операцию
@@ -151,6 +151,7 @@ namespace Diploma
 				}
 				return 0;
 			}
+			else { return 0; }
 		}
 		public void Move(Data d)
 		{
@@ -187,6 +188,11 @@ namespace Diploma
 		public DateTime cur_dt
 		{
 			get { return d[d.Count-1].dt; }
+		}
+		public double R2()
+		{
+			double res = 0.0;
+			return res;
 		}
 		private double CalcCommission(int amount, double price)
 		{
@@ -383,7 +389,7 @@ namespace Diploma
 				//Console.WriteLine (all_data[i].dt + " " + all_data[i].v + " " + all_data[i].volume);
 				Console.WriteLine(d[i].dt + " " + d[i].v + " " + d[i].volume);
 			}*/
-			int count = 20;
+			int count = 16-1;
 			for (int i = 0; i < count+1; ++i)
 			{
 				Console.WriteLine(d[i].ToString());
@@ -395,7 +401,7 @@ namespace Diploma
 			List<string> lines = new List<string>();
 			while (step < 0.01)
 			{
-				Robot r = new Robot(1000, null, count - 1, new List<double>(new double[] { step }), comm, 0, 1000);
+				Robot r = new Robot(1000, null, count - 1, new List<double>(new double[] { step }), comm, 0, 0);
 				for (int i = 0; i < count+1; ++i)
 				{
 					r.Move (d[i]);
