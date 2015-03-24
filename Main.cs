@@ -93,7 +93,7 @@ namespace Diploma
 			his = new List<State>();
 			his.Add(this.state);
 		}
-		public Robot(double money, List<Data> d0, int last_data, List<double> st_params, double comm, int asset_type, int time_offset_ms)
+		public Robot(double money, List<Data> d0, int last_data, List<double> st_params, double comm, int asset_type, int time_offset_ms, double res_for_forts)
 		{
 			his = new List<State>();
 			d = new List<Data>();
@@ -111,6 +111,7 @@ namespace Diploma
 			this.commission_rate = comm;
 			this.asset_type = asset_type;
 			this.time_offset_ms = time_offset_ms;
+			this.g = res_for_forts;
 			his.Add(this.state);
 		}
 		public int Trade(int amount, double price, bool is_last_operation)
@@ -141,8 +142,28 @@ namespace Diploma
 						ops.Dequeue();
 						return 0;
 					}
-					pos += a;
-					money -= a * price;
+					Console.WriteLine("type == " + type);
+					if (type == 0)			// asset
+					{
+						pos += a;
+						money -= a * price;
+					}
+					else
+					{
+						Console.WriteLine("FUTURES");
+						if (Math.Abs(pos + a) < Math.Abs(pos))		// позиция закрывается, деньги высвобождаются
+						{
+							pos += a;
+							if (a >= 0) { money += a * (last_price - price); }	// закрываем короткую позицию
+							else { money += a * (price - last_price); }			// закрываем длинную позицию
+							money += a * go;
+						}
+						else 										// позиция открывается
+						{
+							pos += a;
+							money -= a * go;
+						}
+					}
 					money -= Math.Abs(CalcCommission(a, price));
 					last_price = price;
 					//Console.WriteLine("last_price : " + price);
@@ -156,7 +177,7 @@ namespace Diploma
 		public void Move(Data d)
 		{
 			bool is_last = (count >= last_data ? true : false);
-			if (is_last) { Console.WriteLine("LAST_OPERATION : " + d.ToString()); }
+			//if (is_last) { Console.WriteLine("LAST_OPERATION : " + d.ToString()); }
 			count++;
 			this.d.Add(d);
 			int decision = dcn(this.d);
@@ -178,6 +199,20 @@ namespace Diploma
 				c = CalcCommission(n, p);
 			}
 			return n;
+		}
+		public List<double> yields()
+		{
+			List<double> res = new List<double>();
+			double m = his[0].money;
+			for (int i = 1; i < his.Count; ++i)
+			{
+				if (his[i].pos == 0)
+				{
+					res.Add((his[i].money - m) / m);
+					m = his[i].money;
+				}
+			}
+			return res;
 		}
 		public void PrintState()
 		{
@@ -227,6 +262,12 @@ namespace Diploma
 		{
 			get { return commission_rate; }
 		}
+		public double go
+		{
+			get { return go; }
+			set { go = value; }
+		}
+		private double g;
 		private Queue<Operation> ops;		// торговые операции, ожидающие исполнения
 		private int time_offset_ms;
 		private double l_price;
@@ -335,7 +376,7 @@ namespace Diploma
 				//return -p;
 				double c = Math.Abs(CalcCommission(p, price));
 				if ((price - l) * p - c > 0) { return -p; }
-				else if (((price - l) * p - c) / (l * p) <= -0.01) { return -p; }
+				else if (((price - l) * p - c) / (l * p) <= -0.005) { return -p; }
 				else { return 0; }
 			}
 		}
@@ -379,8 +420,8 @@ namespace Diploma
 		public static void Main (string[] args)
 		{
 			int cnst = 10;
-			List<Data> all_data = ReadData ("Data/SBER_150301_150321.txt");
-			List<Data> d = FactorSeconds(all_data);
+			//List<Data> all_data = ReadData ("Data/Ticks/SBER_150301_150321.txt");
+			//List<Data> d = FactorSeconds(all_data);
 			//DateTime dt = new DateTime(2000, 1, 1, 9, 59, 59, 0) + new TimeSpan(0, 0, 0, 0, 1000);
 			//Console.WriteLine(dt.ToString());
 			//return;
@@ -390,35 +431,62 @@ namespace Diploma
 				Console.WriteLine(d[i].dt + " " + d[i].v + " " + d[i].volume);
 			}*/
 			int count = 16-1;
-			for (int i = 0; i < count+1; ++i)
+			/*for (int i = 0; i < count+1; ++i)
 			{
 				Console.WriteLine(d[i].ToString());
-			}
+			}*/
 			double comm = 0.0001;
 			//double comm = 0.0;
 			double step = 0.0002;
 			double h = 1;
 			List<string> lines = new List<string>();
-			while (step < 0.01)
+			string[] files = Directory.GetFiles("Data/Ticks");
+			int num = 0;
+			foreach (string path in files)
 			{
-				Robot r = new Robot(1000, null, count - 1, new List<double>(new double[] { step }), comm, 0, 0);
-				for (int i = 0; i < count+1; ++i)
+				num++;
+				List<Data> all_data = ReadData(path);
+				List<Data> d = FactorSeconds(all_data);
+				Console.WriteLine("Data:");
+				for (int i = 0; i < 18; ++i)
+				{
+					Console.WriteLine(d[i].ToString());
+				}
+				//count = d.Count - 1;
+				count = 18 - 1;
+				Robot r = new Robot(1000, null, count - 1, new List<double>(new double[] { step }), comm, 0, 0, 1018);	
+				for (int i = 0; i < count; ++i)
 				{
 					r.Move (d[i]);
 				}
-				//Console.WriteLine("History:");
-				//r.PrintHistory();
-				//Console.WriteLine("AY = " + r.AY);
-				lines.Add(step.ToString() + " " + r.AY);
-				step += h;
+				List<double> y = r.yields();
+				double ay = r.AY;
+				StreamWriter wr = new StreamWriter("Strat1/asset/1000/" + num + ".txt");
+				for (int i = 0; i < y.Count; ++i)
+				{
+					wr.WriteLine(y[i]*100);
+				}
+				wr.WriteLine(ay);
+				//Console.WriteLine(ay);
 				r.PrintHistory();
+				Console.WriteLine(ay);
+				wr.Close ();
+				return;
+			}
+			/*Console.WriteLine("History:");
+			r.PrintHistory();
+			Console.WriteLine("Yields:");
+			List<double> y = r.yields();
+			for (int i = 0; i < y.Count; ++i)
+			{
+				Console.WriteLine(y[i] * 100);
 			}
 			StreamWriter wr = new StreamWriter("Strat1/SBER.txt");
 			foreach(string s in lines)
 			{
 				wr.WriteLine(s);
 			}
-			wr.Close();
+			wr.Close();*/
 		}
 	}
 }
